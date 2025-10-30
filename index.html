@@ -1,232 +1,394 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Smart Energy Meter — Live (Minimal)</title>
+  <title>Smart Energy Meter</title>
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <script>
+    // ---------- Tailwind theme colors tweak (optional) ----------
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  "#eff6ff",
+              100: "#dbeafe",
+              500: "#3b82f6",
+              600: "#2563eb",
+              700: "#1d4ed8"
+            }
+          }
+        }
+      }
+    };
+  </script>
+
   <style>
-    /* tiny fade to make updates readable without reflows */
+    /* iOS pull-to-refresh safe */
+    html, body { height: 100%; }
     .tick { transition: opacity .15s ease; }
     .tick.upd { opacity: .6; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-  <!-- Top Bar -->
-  <header class="sticky top-0 z-10 backdrop-blur bg-slate-900/70 border-b border-slate-800">
-    <div class="mx-auto max-w-4xl px-4 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 grid place-content-center text-xs font-bold">SE</div>
-        <div>
-          <h1 class="text-base sm:text-lg font-semibold tracking-tight">Smart Energy Meter — Live</h1>
-          <p class="text-[11px] text-slate-400">ESP32 · EmonLib · Firebase (read-only)</p>
-        </div>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 h-full">
+  <div class="max-w-3xl mx-auto px-4 py-5 sm:py-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">Smart Energy Meter</h1>
+        <p class="text-sm sm:text-base text-slate-500 dark:text-slate-400">Live monitor &amp; control for your ESP32 energy meter</p>
       </div>
-
-      <div class="flex items-center gap-2 text-[11px]">
-        <span id="statusDot" class="inline-block h-2.5 w-2.5 rounded-full bg-yellow-400 animate-pulse"></span>
-        <span id="statusText" class="text-slate-300">Connecting…</span>
+      <div class="flex items-center gap-3">
+        <span id="statusDot" class="h-3 w-3 rounded-full bg-yellow-400 animate-pulse"></span>
+        <span id="statusText" class="text-sm text-slate-600 dark:text-slate-300">Connecting…</span>
+        <button id="themeBtn" class="ml-3 inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+          Toggle Theme
+        </button>
       </div>
     </div>
-  </header>
 
-  <main class="mx-auto max-w-4xl px-4 py-6 space-y-6">
-    <!-- Config (edit if needed) -->
-    <section class="hidden">
-      <code id="dbUrl">https://iot-based-smart-energy-m-1b7ba-default-rtdb.asia-southeast1.firebasedatabase.app</code>
-      <code id="dataPath">/SmartEnergyMeter/meterData</code>
+    <!-- Device -->
+    <section class="mt-5 sm:mt-6">
+      <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-semibold">Device</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">MAC: <span id="mac" class="font-medium">—</span></p>
+          </div>
+          <div class="w-40">
+            <select id="deviceSelect" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm">
+              <option>Loading…</option>
+            </select>
+          </div>
+        </div>
+        <p id="deviceError" class="mt-2 text-xs text-red-600 hidden">Failed to load devices. Check RTDB rules and path.</p>
+      </div>
     </section>
 
-    <!-- Cards: simple + lightweight -->
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Voltage (Vrms)</p>
-        <div class="mt-2 text-2xl font-semibold tick" id="Vrms">—</div>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Current (Irms)</p>
-        <div class="mt-2 text-2xl font-semibold tick" id="Irms">—</div>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Real Power (W)</p>
-        <div class="mt-2 text-2xl font-semibold tick" id="RealPower">—</div>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Apparent Power (VA)</p>
-        <div class="mt-2 text-2xl font-semibold tick" id="ApparentPower">—</div>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Power Factor</p>
-        <div class="mt-2 text-2xl font-semibold tick" id="PowerFactor">—</div>
-        <p class="text-xs text-slate-400 mt-1">Angle: <span class="font-medium tick" id="PhaseAngle_deg">—</span>°</p>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Energy & Bill</p>
-        <div class="mt-2 text-lg">
-          <div class="font-semibold tick"><span id="Energy_kWh">—</span> kWh</div>
-          <div class="text-slate-300 mt-1">Rs <span class="font-semibold tick" id="Bill_Rs">—</span></div>
+    <!-- Last update -->
+    <section class="mt-4">
+      <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
+        <h3 class="text-base font-semibold">Last update</h3>
+        <div class="mt-1 text-sm">
+          <div><span id="lastTs" class="font-medium tick">—</span></div>
+          <div class="text-slate-500 dark:text-slate-400">IP: <span id="ip" class="font-medium">—</span></div>
         </div>
       </div>
     </section>
 
-    <!-- Relays + Last Update -->
-    <section class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Relays</p>
-        <div class="mt-2 flex items-center gap-3 text-sm">
-          <span>R1:</span><span id="Relay1" class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 tick">—</span>
-          <span class="ml-4">R2:</span><span id="Relay2" class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 tick">—</span>
+    <!-- Relays -->
+    <section class="mt-4">
+      <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
+        <h3 class="text-base font-semibold">Relays</h3>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <button id="relay1Btn" class="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-5 text-center text-lg font-semibold">R1: —</button>
+          <button id="relay2Btn" class="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-5 text-center text-lg font-semibold">R2: —</button>
         </div>
-      </div>
-      <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <p class="text-xs uppercase tracking-wide text-slate-400">Last Update</p>
-        <div class="mt-2 text-lg font-medium tick" id="lastTs">—</div>
-        <p class="text-[11px] text-slate-500 mt-1">Source: <code>/SmartEnergyMeter/meterData</code></p>
+        <p class="mt-2 text-xs text-slate-500">Click to toggle. Device beeps on change.</p>
+        <p id="writeError" class="mt-2 text-xs text-red-600 hidden">Write blocked by rules.</p>
+        <p id="writeOk" class="mt-2 text-xs text-emerald-600 hidden">Relay command sent.</p>
       </div>
     </section>
-  </main>
 
-  <footer class="mx-auto max-w-4xl px-4 pb-8 pt-2 text-[11px] text-slate-500">
-    Minimal live dashboard — no client storage, no history. Built for low overhead.
-  </footer>
+    <!-- Metrics -->
+    <section class="mt-4 mb-12">
+      <div class="grid grid-cols-2 sm:grid-cols-2 gap-3">
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Voltage (Vrms)</p>
+          <div id="Vrms" class="mt-2 text-2xl font-bold tick">—</div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Current (Irms)</p>
+          <div id="Irms" class="mt-2 text-2xl font-bold tick">—</div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Active Power (W)</p>
+          <div id="RealPower" class="mt-2 text-2xl font-bold tick">—</div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Power Factor</p>
+          <div id="PowerFactor" class="mt-2 text-2xl font-bold tick">—</div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Angle: <span id="PhaseAngle_deg" class="font-medium tick">—</span>°</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Apparent Power (VA)</p>
+          <div id="ApparentPower" class="mt-2 text-2xl font-bold tick">—</div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Energy (kWh) &amp; Bill</p>
+          <div><span id="Energy_kWh" class="mt-2 text-2xl font-bold tick">—</span> <span class="text-sm">kWh</span></div>
+          <div class="text-slate-600 dark:text-slate-300">Rs <span id="Bill_Rs" class="font-semibold tick">—</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <script>
-    // ---------- Config ----------
-    const DATABASE_URL = document.getElementById("dbUrl").textContent.replace(/\/$/, "");
-    const DATA_PATH = document.getElementById("dataPath").textContent;
-    const DATA_URL_JSON = `${DATABASE_URL}${DATA_PATH}.json`;
+    // ==================== CONFIG ====================
+    // Base RTDB URL (no trailing slash)
+    const DATABASE_URL = "https://iot-based-smart-energy-m-1b7ba-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-    // ---------- Helpers ----------
-    const $ = (id) => document.getElementById(id);
-    const fmt = (v, d = 2) => (isFinite(v) ? Number(v).toFixed(d) : "—");
+    // Default paths (you can use the device dropdown or URL ?path=/SmartEnergyMeter/meterData)
+    const DEFAULT_METER_PATH = "/SmartEnergyMeter/meterData";
+    const RELAYS_BASE = "/SmartEnergyMeter/relays";
 
-    function setStatus(colorClass, text) {
-      $("statusDot").className = `inline-block h-2.5 w-2.5 rounded-full ${colorClass}`;
-      $("statusText").textContent = text;
+    // Optional: devices list path. If absent, we fall back to default.
+    const DEVICES_PATH = "/SmartEnergyMeter/devices";
+
+    // If your rules require an auth token, append ?auth=... to requests:
+    const AUTH_PARAM = ""; // e.g., "?auth=YOUR_TOKEN"
+    // =================================================
+
+    // ---------- Theme toggle ----------
+    const themeBtn = document.getElementById("themeBtn");
+    const root = document.documentElement;
+    function setTheme(dark) {
+      root.classList.toggle("dark", !!dark);
+      localStorage.setItem("sem_theme", dark ? "dark" : "light");
     }
+    // init
+    setTheme(localStorage.getItem("sem_theme") === "dark");
+    themeBtn.addEventListener("click", () => setTheme(!root.classList.contains("dark")));
 
-    // Light visual tick without layout thrash
+    // ---------- Elements ----------
+    const $ = (id) => document.getElementById(id);
+    const statusDot = $("statusDot");
+    const statusText = $("statusText");
+    const deviceSel = $("deviceSelect");
+    const deviceError = $("deviceError");
+    const writeError = $("writeError");
+    const writeOk = $("writeOk");
+
+    const fields = {
+      Vrms: $("Vrms"),
+      Irms: $("Irms"),
+      RealPower: $("RealPower"),
+      ApparentPower: $("ApparentPower"),
+      PowerFactor: $("PowerFactor"),
+      PhaseAngle_deg: $("PhaseAngle_deg"),
+      Energy_kWh: $("Energy_kWh"),
+      Bill_Rs: $("Bill_Rs"),
+      ip: $("ip"),
+      mac: $("mac"),
+      lastTs: $("lastTs"),
+    };
+
+    const fmt = (v, d = 2) => (isFinite(v) ? Number(v).toFixed(d) : "—");
+    function setStatus(color, text) {
+      statusDot.className = `h-3 w-3 rounded-full ${color}`;
+      statusText.textContent = text;
+    }
     function tick(el, val) {
       el.classList.add("upd");
       el.textContent = val;
-      // micro task to remove class after paint
-      requestAnimationFrame(() => {
-        el.classList.remove("upd");
-      });
+      requestAnimationFrame(() => el.classList.remove("upd"));
     }
 
-    function paint(data) {
-      if (!data || typeof data !== "object") return;
-      if ("Vrms" in data) tick($("Vrms"), fmt(data.Vrms, 1));
-      if ("Irms" in data) tick($("Irms"), fmt(data.Irms, 2));
-      if ("RealPower" in data) tick($("RealPower"), fmt(data.RealPower, 1));
-      if ("ApparentPower" in data) tick($("ApparentPower"), fmt(data.ApparentPower, 1));
-      if ("PowerFactor" in data) tick($("PowerFactor"), fmt(data.PowerFactor, 2));
-      if ("PhaseAngle_deg" in data) tick($("PhaseAngle_deg"), fmt(data.PhaseAngle_deg, 1));
-      if ("Energy_kWh" in data) tick($("Energy_kWh"), fmt(data.Energy_kWh, 3));
-      if ("Bill_Rs" in data) tick($("Bill_Rs"), fmt(data.Bill_Rs, 1));
-
-      if ("Relay1" in data) {
-        const r1 = $("Relay1");
-        r1.textContent = data.Relay1 ? "ON" : "OFF";
-        r1.className = `px-2 py-0.5 rounded-md ${data.Relay1 ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"} tick`;
-      }
-      if ("Relay2" in data) {
-        const r2 = $("Relay2");
-        r2.textContent = data.Relay2 ? "ON" : "OFF";
-        r2.className = `px-2 py-0.5 rounded-md ${data.Relay2 ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"} tick`;
-      }
-
-      tick($("lastTs"), new Date().toLocaleTimeString());
+    // ---------- Path management ----------
+    function getURLPathOverride() {
+      const u = new URL(location.href);
+      return u.searchParams.get("path");
+    }
+    function makeURL(path) {
+      const base = `${DATABASE_URL}${path}.json`;
+      return AUTH_PARAM ? `${base}${AUTH_PARAM.startsWith("?") ? AUTH_PARAM : "?" + AUTH_PARAM}` : base;
     }
 
-    // ---------- Live stream (no history kept) ----------
+    // Currently selected meter path
+    let METER_PATH = getURLPathOverride() || DEFAULT_METER_PATH;
+
+    // ---------- Live reading (no history) ----------
     let evtSource = null;
     let pollTimer = null;
 
-    // Throttle UI paints to at most once every 500ms to avoid overload
-    let pendingData = null;
+    // Throttle paints to avoid reflow overload
+    let pending = null;
     let lastPaint = 0;
-    const PAINT_MIN_GAP_MS = 500;
+    const PAINT_GAP = 500; // ms
 
     function schedulePaint(d) {
-      pendingData = d;
+      pending = d;
       const now = performance.now();
-      if (now - lastPaint >= PAINT_MIN_GAP_MS) {
+      if (now - lastPaint >= PAINT_GAP) {
         lastPaint = now;
-        paint(pendingData);
-        pendingData = null;
+        paint(pending);
+        pending = null;
       } else {
-        // defer to just after the gap
-        const delay = Math.max(0, PAINT_MIN_GAP_MS - (now - lastPaint));
+        const delay = Math.max(0, PAINT_GAP - (now - lastPaint));
         setTimeout(() => {
-          if (pendingData) {
+          if (pending) {
             lastPaint = performance.now();
-            paint(pendingData);
-            pendingData = null;
+            paint(pending);
+            pending = null;
           }
         }, delay);
       }
     }
 
+    function paint(d) {
+      if (!d || typeof d !== "object") return;
+
+      if ("Vrms" in d) tick(fields.Vrms, fmt(d.Vrms, 1));
+      if ("Irms" in d) tick(fields.Irms, fmt(d.Irms, 2));
+      if ("RealPower" in d) tick(fields.RealPower, fmt(d.RealPower, 1));
+      if ("ApparentPower" in d) tick(fields.ApparentPower, fmt(d.ApparentPower, 1));
+      if ("PowerFactor" in d) tick(fields.PowerFactor, fmt(d.PowerFactor, 2));
+      if ("PhaseAngle_deg" in d) tick(fields.PhaseAngle_deg, fmt(d.PhaseAngle_deg, 1));
+      if ("Energy_kWh" in d) tick(fields.Energy_kWh, fmt(d.Energy_kWh, 3));
+      if ("Bill_Rs" in d) tick(fields.Bill_Rs, fmt(d.Bill_Rs, 1));
+      if ("ip" in d) tick(fields.ip, d.ip || "—");
+      if ("mac" in d) tick(fields.mac, d.mac || "—");
+      tick(fields.lastTs, new Date().toLocaleTimeString());
+
+      // Relay badges (read from meterData if present)
+      if ("Relay1" in d) setRelayUI(1, !!d.Relay1, false);
+      if ("Relay2" in d) setRelayUI(2, !!d.Relay2, false);
+    }
+
     function startStream() {
+      stopStream();
+      const url = makeURL(METER_PATH);
       try {
-        // Simple REST stream: text/event-stream delivering "put"/"patch" events
-        evtSource = new EventSource(DATA_URL_JSON);
+        evtSource = new EventSource(url);
         setStatus("bg-yellow-400 animate-pulse", "Connecting…");
 
-        evtSource.onopen = () => setStatus("bg-emerald-500", "Live");
-
+        evtSource.onopen = () => setStatus("bg-emerald-500", "Online");
         evtSource.onerror = () => {
-          // Stop stream; go polling
-          if (evtSource) evtSource.close();
-          evtSource = null;
-          setStatus("bg-sky-400", "Polling 4s");
+          stopStream();
+          setStatus("bg-sky-400", "Polling");
           startPolling();
         };
-
         evtSource.onmessage = (e) => {
           try {
-            const payload = JSON.parse(e.data);   // {event:"put"|..., data:{path:"/...", data:{...}}}
-            const d = payload && payload.data ? payload.data : null;
-            if (d && typeof d === "object") {
-              schedulePaint(d);
-            }
-          } catch (_) {
-            // ignore malformed lines
-          }
+            // Firebase may send either a raw object (for plain .json EventSource)
+            // or an envelope {event:"put", data:{...}} depending on env.
+            const data = JSON.parse(e.data);
+            const node = data && data.data ? data.data : data;
+            if (node && typeof node === "object") schedulePaint(node);
+          } catch { /* ignore */ }
         };
       } catch {
-        setStatus("bg-sky-400", "Polling 4s");
+        setStatus("bg-sky-400", "Polling");
         startPolling();
       }
     }
-
-    function startPolling() {
-      if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(pollOnce, 4000);
-      pollOnce();
+    function stopStream() {
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
 
     async function pollOnce() {
       try {
-        const res = await fetch(DATA_URL_JSON, { cache: "no-store" });
+        const res = await fetch(makeURL(METER_PATH), { cache: "no-store" });
+        if (!res.ok) throw new Error(res.status);
         const d = await res.json();
         if (d && typeof d === "object") schedulePaint(d);
+        setStatus("bg-emerald-500", "Online");
       } catch {
         setStatus("bg-red-500", "Offline");
       }
     }
+    function startPolling() {
+      pollOnce();
+      pollTimer = setInterval(pollOnce, 4000);
+    }
 
-    (function init() {
+    // ---------- Relays (write to RTDB) ----------
+    const relay1Btn = $("relay1Btn");
+    const relay2Btn = $("relay2Btn");
+
+    function setRelayUI(n, on, pulse=true) {
+      const el = n === 1 ? relay1Btn : relay2Btn;
+      el.textContent = `R${n}: ${on ? "ON" : "OFF"}`;
+      el.className =
+        "rounded-xl border px-4 py-5 text-center text-lg font-semibold " +
+        (on
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300"
+          : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800");
+      if (pulse) {
+        el.classList.add("ring-2","ring-emerald-300","ring-offset-0");
+        setTimeout(()=>el.classList.remove("ring-2","ring-emerald-300","ring-offset-0"),200);
+      }
+    }
+
+    async function writeRelay(n, on) {
+      writeError.classList.add("hidden");
+      writeOk.classList.add("hidden");
+      const path = `${RELAYS_BASE}/relay${n}/state`;
+      try {
+        const res = await fetch(makeURL(path), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(on ? 1 : 0),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        writeOk.classList.remove("hidden");
+        setTimeout(()=>writeOk.classList.add("hidden"), 1200);
+      } catch (e) {
+        writeError.classList.remove("hidden");
+        setTimeout(()=>writeError.classList.add("hidden"), 2500);
+      }
+    }
+
+    relay1Btn.addEventListener("click", () => {
+      const on = relay1Btn.textContent.includes("OFF"); // toggle
+      setRelayUI(1, on);
+      writeRelay(1, on);
+    });
+    relay2Btn.addEventListener("click", () => {
+      const on = relay2Btn.textContent.includes("OFF");
+      setRelayUI(2, on);
+      writeRelay(2, on);
+    });
+
+    // ---------- Device selector ----------
+    async function loadDevices() {
+      deviceError.classList.add("hidden");
+      try {
+        const res = await fetch(makeURL(DEVICES_PATH), { cache: "no-store" });
+        if (!res.ok) throw new Error(res.status);
+        const list = await res.json();
+        deviceSel.innerHTML = "";
+        if (list && typeof list === "object" && Object.keys(list).length) {
+          for (const [key, obj] of Object.entries(list)) {
+            const opt = document.createElement("option");
+            opt.value = obj.path || DEFAULT_METER_PATH;
+            opt.textContent = key;
+            deviceSel.appendChild(opt);
+          }
+          // Select first device by default
+          METER_PATH = deviceSel.value;
+        } else {
+          // Fallback single device
+          const opt = document.createElement("option");
+          opt.value = DEFAULT_METER_PATH;
+          opt.textContent = "Default";
+          deviceSel.appendChild(opt);
+          METER_PATH = DEFAULT_METER_PATH;
+        }
+      } catch {
+        deviceError.classList.remove("hidden");
+        deviceSel.innerHTML = `<option value="${DEFAULT_METER_PATH}">Default</option>`;
+        METER_PATH = DEFAULT_METER_PATH;
+      }
+    }
+
+    deviceSel.addEventListener("change", () => {
+      METER_PATH = deviceSel.value || DEFAULT_METER_PATH;
+      stopStream();
+      startStream();
+    });
+
+    // ---------- Bootstrap ----------
+    (async function init() {
+      await loadDevices();
+      // Prime relay buttons to known state (if meterData has Relay1/2 it will repaint shortly)
+      setRelayUI(1, false, false);
+      setRelayUI(2, false, false);
       startStream();
     })();
   </script>
