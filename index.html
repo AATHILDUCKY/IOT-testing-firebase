@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Energy Meter — Realtime Dashboard</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Optional: smooth number transitions */
+    .flip {
+      transition: transform .2s ease, opacity .2s ease;
+    }
+    .flip.in {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .flip.out {
+      transform: translateY(6px);
+      opacity: .6;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Top Bar -->
+  <header class="sticky top-0 z-10 backdrop-blur bg-slate-900/70 border-b border-slate-800">
+    <div class="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 grid place-content-center font-bold">SE</div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-semibold tracking-tight">Smart Energy Meter — Realtime</h1>
+          <p class="text-xs text-slate-400">Sri Lanka Version · ESP32 + 2-Relay + Firebase</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div id="streamDot" class="h-2.5 w-2.5 rounded-full bg-yellow-400 animate-pulse"></div>
+        <span id="streamText" class="text-xs text-slate-300">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-6 space-y-6">
+    <!-- Config (edit if needed) -->
+    <section class="hidden">
+      <code id="dbUrl">https://iot-based-smart-energy-m-1b7ba-default-rtdb.asia-southeast1.firebasedatabase.app</code>
+      <code id="dataPath">/SmartEnergyMeter/meterData</code>
+      <code id="relaysPath">/SmartEnergyMeter/relays</code>
+    </section>
+
+    <!-- Metric Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Voltage -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Voltage (Vrms)</p>
+        <div class="mt-2 text-3xl font-semibold">
+          <span id="Vrms" class="flip">—</span><span class="text-slate-400 text-base ml-1">V</span>
+        </div>
+      </div>
+
+      <!-- Current -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Current (Irms)</p>
+        <div class="mt-2 text-3xl font-semibold">
+          <span id="Irms" class="flip">—</span><span class="text-slate-400 text-base ml-1">A</span>
+        </div>
+      </div>
+
+      <!-- Real Power -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Real Power</p>
+        <div class="mt-2 text-3xl font-semibold">
+          <span id="RealPower" class="flip">—</span><span class="text-slate-400 text-base ml-1">W</span>
+        </div>
+      </div>
+
+      <!-- Apparent Power -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Apparent Power</p>
+        <div class="mt-2 text-3xl font-semibold">
+          <span id="ApparentPower" class="flip">—</span><span class="text-slate-400 text-base ml-1">VA</span>
+        </div>
+      </div>
+
+      <!-- Power Factor -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Power Factor</p>
+        <div class="mt-2 text-3xl font-semibold">
+          <span id="PowerFactor" class="flip">—</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">Phase Angle: <span id="PhaseAngle" class="font-medium">—</span>°</p>
+      </div>
+
+      <!-- Energy & Bill -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400">Energy &amp; Bill</p>
+        <div class="mt-2">
+          <div class="text-2xl font-semibold"><span id="Energy_kWh" class="flip">—</span> <span class="text-base text-slate-400">kWh</span></div>
+          <div class="text-lg text-slate-300 mt-1">Bill: Rs <span id="Bill_Rs" class="flip">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Relays (Read-only status display) -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400 mb-2">Relay States</p>
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-slate-400">Relay 1:</span>
+          <span id="Relay1Badge" class="px-2 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-300">—</span>
+          <span class="text-sm text-slate-400 ml-4">Relay 2:</span>
+          <span id="Relay2Badge" class="px-2 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-300">—</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-3">Tip: We can add write toggles later if your Firebase rules allow it.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <p class="text-xs uppercase tracking-wide text-slate-400 mb-2">Last Update</p>
+        <div class="text-lg font-medium"><span id="lastTs">—</span></div>
+        <p class="text-xs text-slate-500 mt-1">Data source: <code class="text-slate-400">/SmartEnergyMeter/meterData</code></p>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Power Chart -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-sm font-medium text-slate-200">Power (Real W / Apparent VA)</p>
+          <span class="text-xs text-slate-500">Rolling 60 points</span>
+        </div>
+        <canvas id="powerChart" height="140"></canvas>
+      </div>
+
+      <!-- Voltage / Current Chart -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-sm font-medium text-slate-200">Voltage (V) &amp; Current (A)</p>
+          <span class="text-xs text-slate-500">Rolling 60 points</span>
+        </div>
+        <canvas id="viChart" height="140"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mx-auto max-w-6xl px-4 pb-10 pt-4 text-xs text-slate-500">
+    Built for ESP32 + EmonLib + Firebase RTDB · Dashboard by Welford ⚡
+  </footer>
+
+  <script>
+    // ---- Basic helpers ----
+    const $ = (id) => document.getElementById(id);
+    const fmt = (n, d=2) => (isFinite(n) ? Number(n).toFixed(d) : "—");
+
+    // ---- Config from DOM (easy to edit) ----
+    const DATABASE_URL = $("dbUrl").textContent.replace(/\/$/, "");
+    const DATA_PATH = $("dataPath").textContent;       // /SmartEnergyMeter/meterData
+    const RELAYS_PATH = $("relaysPath").textContent;   // /SmartEnergyMeter/relays
+
+    const DATA_URL_JSON = `${DATABASE_URL}${DATA_PATH}.json`;
+    const RELAY1_URL = `${DATABASE_URL}${RELAYS_PATH}/relay1/state.json`;
+    const RELAY2_URL = `${DATABASE_URL}${RELAYS_PATH}/relay2/state.json`;
+
+    // ---- UI update helpers ----
+    function setFlip(el, value) {
+      el.classList.remove("in");
+      el.classList.add("out");
+      requestAnimationFrame(() => {
+        el.textContent = value;
+        el.classList.remove("out");
+        el.classList.add("in");
+      });
+    }
+
+    function setStatus(colorClass, text) {
+      const dot = $("streamDot");
+      const tx = $("streamText");
+      dot.className = `h-2.5 w-2.5 rounded-full ${colorClass}`;
+      tx.textContent = text;
+    }
+
+    function updateCards(d) {
+      if (!d) return;
+      if ("Vrms" in d) setFlip($("Vrms"), fmt(d.Vrms, 1));
+      if ("Irms" in d) setFlip($("Irms"), fmt(d.Irms, 2));
+      if ("RealPower" in d) setFlip($("RealPower"), fmt(d.RealPower, 1));
+      if ("ApparentPower" in d) setFlip($("ApparentPower"), fmt(d.ApparentPower, 1));
+      if ("PowerFactor" in d) setFlip($("PowerFactor"), fmt(d.PowerFactor, 2));
+      if ("PhaseAngle_deg" in d) $("PhaseAngle").textContent = fmt(d.PhaseAngle_deg, 1);
+      if ("Energy_kWh" in d) setFlip($("Energy_kWh"), fmt(d.Energy_kWh, 3));
+      if ("Bill_Rs" in d) setFlip($("Bill_Rs"), fmt(d.Bill_Rs, 1));
+
+      if ("Relay1" in d) {
+        $("Relay1Badge").textContent = d.Relay1 ? "ON" : "OFF";
+        $("Relay1Badge").className = `px-2 py-1 rounded-md text-xs font-semibold ${d.Relay1 ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"}`;
+      }
+      if ("Relay2" in d) {
+        $("Relay2Badge").textContent = d.Relay2 ? "ON" : "OFF";
+        $("Relay2Badge").className = `px-2 py-1 rounded-md text-xs font-semibold ${d.Relay2 ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"}`;
+      }
+
+      $("lastTs").textContent = new Date().toLocaleTimeString();
+    }
+
+    // ---- Charts: rolling 60 points ----
+    const labels = [];
+    const powerData = { real: [], apparent: [] };
+    const viData = { v: [], i: [] };
+    const MAX_POINTS = 60;
+
+    function pushData(arr, val) {
+      arr.push(val);
+      if (arr.length > MAX_POINTS) arr.shift();
+    }
+    function pushLabel() {
+      const t = new Date().toLocaleTimeString();
+      labels.push(t);
+      if (labels.length > MAX_POINTS) labels.shift();
+    }
+
+    const powerChart = new Chart($("powerChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Real Power (W)", data: powerData.real, borderWidth: 2, tension: 0.25 },
+          { label: "Apparent Power (VA)", data: powerData.apparent, borderWidth: 2, tension: 0.25 }
+        ]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.1)" } },
+          y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.1)" } }
+        },
+        plugins: {
+          legend: { labels: { color: "#e2e8f0" } }
+        }
+      }
+    });
+
+    const viChart = new Chart($("viChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Voltage (V)", data: viData.v, borderWidth: 2, tension: 0.25 },
+          { label: "Current (A)", data: viData.i, borderWidth: 2, tension: 0.25 }
+        ]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.1)" } },
+          y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,0.1)" } }
+        },
+        plugins: {
+          legend: { labels: { color: "#e2e8f0" } }
+        }
+      }
+    });
+
+    function updateCharts(d) {
+      if (!d) return;
+      pushLabel();
+      pushData(powerData.real, Number(d.RealPower ?? NaN));
+      pushData(powerData.apparent, Number(d.ApparentPower ?? NaN));
+      pushData(viData.v, Number(d.Vrms ?? NaN));
+      pushData(viData.i, Number(d.Irms ?? NaN));
+      powerChart.update();
+      viChart.update();
+    }
+
+    // ---- Realtime stream via Firebase REST Streaming API ----
+    let evtSource = null;
+    let pollTimer = null;
+
+    function startStream() {
+      try {
+        // EventSource requires CORS to permit streaming; Firebase RTDB supports it.
+        evtSource = new EventSource(`${DATA_URL_JSON}?ns=${DATABASE_URL.split("//")[1].split("-default-rtdb")[0]}&print=event`);
+        setStatus("bg-yellow-400 animate-pulse", "Connecting…");
+
+        evtSource.onopen = () => {
+          setStatus("bg-emerald-500", "Live");
+        };
+
+        evtSource.onerror = () => {
+          setStatus("bg-red-500", "Stream error — fallback to 5s polling");
+          if (evtSource) evtSource.close();
+          evtSource = null;
+          startPolling();
+        };
+
+        evtSource.onmessage = (e) => {
+          // Firebase REST stream sends JSON line events with {event: "put"/"patch", data: {...}}
+          try {
+            const payload = JSON.parse(e.data);
+            // payload.data is the actual node content for "put"
+            const data = payload && payload.data ? payload.data : null;
+            if (data && typeof data === "object") {
+              updateCards(data);
+              updateCharts(data);
+            }
+          } catch (err) {
+            // Ignore malformed lines
+          }
+        };
+      } catch (err) {
+        setStatus("bg-red-500", "Stream unsupported — fallback");
+        startPolling();
+      }
+    }
+
+    // ---- Fallback polling (every 5s) ----
+    async function pollOnce() {
+      try {
+        const res = await fetch(DATA_URL_JSON, { cache: "no-store" });
+        const data = await res.json();
+        if (data && typeof data === "object") {
+          updateCards(data);
+          updateCharts(data);
+          setStatus("bg-sky-400", "Polling 5s");
+        } else {
+          setStatus("bg-red-500", "No data");
+        }
+      } catch (e) {
+        setStatus("bg-red-500", "Polling error");
+      }
+    }
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(pollOnce, 5000);
+      pollOnce();
+    }
+
+    // ---- Initialize ----
+    (function init() {
+      // Kick off streaming; if it fails we’ll automatically fall back to polling.
+      startStream();
+
+      // Also fetch relay states (read-only display)
+      fetch(RELAY1_URL).then(r => r.json()).then(v => {
+        if (typeof v === "number") {
+          $("Relay1Badge").textContent = v ? "ON" : "OFF";
+          $("Relay1Badge").className = `px-2 py-1 rounded-md text-xs font-semibold ${v ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"}`;
+        }
+      }).catch(()=>{});
+      fetch(RELAY2_URL).then(r => r.json()).then(v => {
+        if (typeof v === "number") {
+          $("Relay2Badge").textContent = v ? "ON" : "OFF";
+          $("Relay2Badge").className = `px-2 py-1 rounded-md text-xs font-semibold ${v ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-300"}`;
+        }
+      }).catch(()=>{});
+    })();
+  </script>
+</body>
+</html>
